@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/product_model.dart';
-import '../services/product_storage_service.dart';
+import '../services/firebase_product_service.dart';
 import 'product_result_screen.dart';
 import 'scanner_screen.dart';
 
@@ -32,13 +32,13 @@ class _HomeScreenState extends State<HomeScreen> {
         title: 'Scan History',
         emptyIcon: Icons.history,
         emptyMessage: 'Scanned products will appear here.',
-        productsNotifier: ProductStorageService.scanHistory,
+        productsStream: FirebaseProductService().getScanHistory(),
       ),
       _ProductListTab(
         title: 'Saved Items',
         emptyIcon: Icons.bookmark,
         emptyMessage: 'Saved products will appear here.',
-        productsNotifier: ProductStorageService.savedProducts,
+        productsStream: FirebaseProductService().getSavedProducts(),
       ),
       const _ProfileTab(),
     ];
@@ -178,9 +178,9 @@ class _DailyCaloriesCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<ProductModel>>(
-      valueListenable: ProductStorageService.scanHistory,
-      builder: (context, products, child) {
+    return _ProductStreamBuilder(
+      stream: FirebaseProductService().getScanHistory(),
+      builder: (context, products) {
         final totalCalories = products.fold<int>(
           0,
           (total, product) => total + product.caloriesNumber,
@@ -248,9 +248,9 @@ class _DashboardMetrics extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: ValueListenableBuilder<List<ProductModel>>(
-            valueListenable: ProductStorageService.scanHistory,
-            builder: (context, products, child) {
+          child: _ProductStreamBuilder(
+            stream: FirebaseProductService().getScanHistory(),
+            builder: (context, products) {
               return _MetricCard(
                 icon: Icons.document_scanner,
                 label: 'Scans',
@@ -261,9 +261,9 @@ class _DashboardMetrics extends StatelessWidget {
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: ValueListenableBuilder<List<ProductModel>>(
-            valueListenable: ProductStorageService.savedProducts,
-            builder: (context, products, child) {
+          child: _ProductStreamBuilder(
+            stream: FirebaseProductService().getSavedProducts(),
+            builder: (context, products) {
               return _MetricCard(
                 icon: Icons.bookmark,
                 label: 'Saved',
@@ -371,24 +371,53 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
+class _ProductStreamBuilder extends StatelessWidget {
+  final Stream<List<ProductModel>> stream;
+  final Widget Function(BuildContext context, List<ProductModel> products)
+      builder;
+
+  const _ProductStreamBuilder({
+    required this.stream,
+    required this.builder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<ProductModel>>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return const Center(child: Text('Could not load products.'));
+        }
+
+        return builder(context, snapshot.data ?? []);
+      },
+    );
+  }
+}
+
 class _ProductListTab extends StatelessWidget {
   final String title;
   final IconData emptyIcon;
   final String emptyMessage;
-  final ValueNotifier<List<ProductModel>> productsNotifier;
+  final Stream<List<ProductModel>> productsStream;
 
   const _ProductListTab({
     required this.title,
     required this.emptyIcon,
     required this.emptyMessage,
-    required this.productsNotifier,
+    required this.productsStream,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<ProductModel>>(
-      valueListenable: productsNotifier,
-      builder: (context, products, child) {
+    return _ProductStreamBuilder(
+      stream: productsStream,
+      builder: (context, products) {
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [

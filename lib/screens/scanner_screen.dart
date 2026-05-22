@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../models/product_model.dart';
+import '../services/firebase_product_service.dart';
 import '../services/open_food_facts_service.dart';
-import '../services/product_storage_service.dart';
 import 'product_result_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
@@ -18,6 +18,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     text: '737628064502',
   );
   final OpenFoodFactsService _service = OpenFoodFactsService();
+  final FirebaseProductService _firebaseService = FirebaseProductService();
   final MobileScannerController _scannerController = MobileScannerController();
 
   bool _isLoading = false;
@@ -65,8 +66,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     });
 
     try {
-      final ProductModel? product =
-          await _service.fetchProductByBarcode(barcode);
+      final ProductModel? product = await _service.getProductByBarcode(barcode);
 
       if (!mounted) return;
 
@@ -78,7 +78,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
         return;
       }
 
-      ProductStorageService.addToHistory(product);
+      await _firebaseService.saveScannedProduct(product);
+
+      if (!mounted) return;
 
       await Navigator.push(
         context,

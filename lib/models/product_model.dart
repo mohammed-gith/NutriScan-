@@ -1,69 +1,33 @@
 class ProductModel {
   final String barcode;
-  final String productName;
+  final String name;
   final String brand;
+  final String imageUrl;
   final String ingredients;
-  final String allergens;
-  final String calories;
-  final String carbohydrates;
-  final String sugars;
-  final String fat;
-  final String saturatedFat;
-  final String protein;
-  final String salt;
+  final List<String> allergens;
   final String nutriScore;
-  final String category;
+  final double calories;
+  final double sugar;
+  final double fat;
+  final double salt;
 
   const ProductModel({
     required this.barcode,
-    required this.productName,
+    required this.name,
     required this.brand,
+    required this.imageUrl,
     required this.ingredients,
     required this.allergens,
-    required this.calories,
-    required this.carbohydrates,
-    required this.sugars,
-    required this.fat,
-    required this.saturatedFat,
-    required this.protein,
-    required this.salt,
     required this.nutriScore,
-    required this.category,
+    required this.calories,
+    required this.sugar,
+    required this.fat,
+    required this.salt,
   });
 
-  factory ProductModel.fromJson({
-    required String barcode,
-    required Map<String, dynamic> json,
-  }) {
-    final nutriments = json['nutriments'] as Map<String, dynamic>? ?? {};
-    final allergensText = json['allergens']?.toString() ?? '';
-    final categories = json['categories_tags'] as List<dynamic>? ?? [];
-    final categoryText = categories.isEmpty
-        ? json['main_category']?.toString() ?? ''
-        : categories.last.toString();
+  String get productName => name;
 
-    return ProductModel(
-      barcode: barcode,
-      productName: json['product_name']?.toString() ?? 'Unknown product',
-      brand: json['brands']?.toString() ?? 'Unknown brand',
-      ingredients: json['ingredients_text']?.toString() ?? 'No ingredients listed',
-      allergens: allergensText.isEmpty ? 'No allergens listed' : allergensText,
-      calories: _readNutrient(nutriments, 'energy-kcal_100g'),
-      carbohydrates: _readNutrient(nutriments, 'carbohydrates_100g'),
-      sugars: _readNutrient(nutriments, 'sugars_100g'),
-      fat: _readNutrient(nutriments, 'fat_100g'),
-      saturatedFat: _readNutrient(nutriments, 'saturated-fat_100g'),
-      protein: _readNutrient(nutriments, 'proteins_100g'),
-      salt: _readNutrient(nutriments, 'salt_100g'),
-      nutriScore:
-          json['nutriscore_grade']?.toString().toUpperCase() ?? 'Not available',
-      category: categoryText,
-    );
-  }
-
-  int get caloriesNumber {
-    return double.tryParse(calories)?.round() ?? 0;
-  }
+  int get caloriesNumber => calories.round();
 
   int get nutriScoreRank {
     switch (nutriScore.toUpperCase()) {
@@ -82,21 +46,118 @@ class ProductModel {
     }
   }
 
+  String get sugars => _formatDouble(sugar);
+
+  String get carbohydrates => '0';
+
+  String get saturatedFat => '0';
+
+  String get protein => '0';
+
   double nutrientNumber(String value) {
     return double.tryParse(value) ?? 0;
   }
 
-  static String _readNutrient(Map<String, dynamic> nutriments, String key) {
-    final value = nutriments[key];
-    if (value == null) return '0';
+  factory ProductModel.fromOpenFoodFactsJson(
+    String barcode,
+    Map<String, dynamic> json,
+  ) {
+    final nutriments = _asMap(json['nutriments']);
 
-    final number = double.tryParse(value.toString());
-    if (number == null) return '0';
+    return ProductModel(
+      barcode: barcode,
+      name: _asString(json['product_name'], defaultValue: 'Unknown product'),
+      brand: _asString(json['brands'], defaultValue: 'Unknown brand'),
+      imageUrl: _asString(json['image_url']),
+      ingredients: _asString(json['ingredients_text']),
+      allergens: _asStringList(json['allergens_tags']),
+      nutriScore: _asString(json['nutriscore_grade']).toUpperCase(),
+      calories: _asDouble(nutriments['energy-kcal_100g']),
+      sugar: _asDouble(nutriments['sugars_100g']),
+      fat: _asDouble(nutriments['fat_100g']),
+      salt: _asDouble(nutriments['salt_100g']),
+    );
+  }
 
-    if (number == number.roundToDouble()) {
-      return number.round().toString();
+  factory ProductModel.fromJson({
+    required String barcode,
+    required Map<String, dynamic> json,
+  }) {
+    return ProductModel.fromOpenFoodFactsJson(barcode, json);
+  }
+
+  Map<String, dynamic> toFirestoreMap() {
+    return {
+      'barcode': barcode,
+      'name': name,
+      'brand': brand,
+      'imageUrl': imageUrl,
+      'ingredients': ingredients,
+      'allergens': allergens,
+      'nutriScore': nutriScore,
+      'calories': calories,
+      'sugar': sugar,
+      'fat': fat,
+      'salt': salt,
+    };
+  }
+
+  factory ProductModel.fromFirestoreMap(Map<String, dynamic> map) {
+    return ProductModel(
+      barcode: _asString(map['barcode']),
+      name: _asString(map['name'], defaultValue: 'Unknown product'),
+      brand: _asString(map['brand'], defaultValue: 'Unknown brand'),
+      imageUrl: _asString(map['imageUrl']),
+      ingredients: _asString(map['ingredients']),
+      allergens: _asStringList(map['allergens']),
+      nutriScore: _asString(map['nutriScore']).toUpperCase(),
+      calories: _asDouble(map['calories']),
+      sugar: _asDouble(map['sugar']),
+      fat: _asDouble(map['fat']),
+      salt: _asDouble(map['salt']),
+    );
+  }
+
+  static Map<String, dynamic> _asMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    return {};
+  }
+
+  static String _asString(dynamic value, {String defaultValue = ''}) {
+    if (value == null) return defaultValue;
+
+    final text = value.toString().trim();
+    return text.isEmpty ? defaultValue : text;
+  }
+
+  static double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static List<String> _asStringList(dynamic value) {
+    if (value is List) {
+      return value
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
     }
 
-    return number.toStringAsFixed(1);
+    final text = value?.toString().trim() ?? '';
+    if (text.isEmpty) return [];
+
+    return text
+        .split(',')
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+  }
+
+  static String _formatDouble(double value) {
+    if (value == value.roundToDouble()) {
+      return value.round().toString();
+    }
+
+    return value.toStringAsFixed(1);
   }
 }

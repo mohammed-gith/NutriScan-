@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/product_model.dart';
-import '../services/product_storage_service.dart';
+import '../services/firebase_product_service.dart';
 import '../widgets/product_info_row.dart';
 import 'healthier_alternatives_screen.dart';
 
@@ -121,7 +121,7 @@ class ProductResultScreen extends StatelessWidget {
                 const SizedBox(height: 14),
                 _NutritionBar(
                   label: 'Calories',
-                  value: product.calories,
+                  value: _formatNutritionValue(product.calories),
                   unit: 'kcal',
                   maxValue: 500,
                   color: const Color(0xFF6B7280),
@@ -142,7 +142,7 @@ class ProductResultScreen extends StatelessWidget {
                 ),
                 _NutritionBar(
                   label: 'Fat',
-                  value: product.fat,
+                  value: _formatNutritionValue(product.fat),
                   unit: 'g',
                   maxValue: 50,
                   color: const Color(0xFF16A05D),
@@ -163,7 +163,7 @@ class ProductResultScreen extends StatelessWidget {
                 ),
                 _NutritionBar(
                   label: 'Salt',
-                  value: product.salt,
+                  value: _formatNutritionValue(product.salt),
                   unit: 'g',
                   maxValue: 6,
                   color: const Color(0xFFE5B400),
@@ -180,8 +180,14 @@ class ProductResultScreen extends StatelessWidget {
             ),
             child: Column(
               children: [
-                ProductInfoRow(label: 'Ingredients', value: product.ingredients),
-                ProductInfoRow(label: 'Allergens', value: product.allergens),
+                ProductInfoRow(
+                    label: 'Ingredients', value: product.ingredients),
+                ProductInfoRow(
+                  label: 'Allergens',
+                  value: product.allergens.isEmpty
+                      ? 'No allergens listed'
+                      : product.allergens.join(', '),
+                ),
                 ProductInfoRow(
                   label: 'Calories per 100g',
                   value: '${product.calories} kcal',
@@ -194,22 +200,36 @@ class ProductResultScreen extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: ValueListenableBuilder<List<ProductModel>>(
-                  valueListenable: ProductStorageService.savedProducts,
-                  builder: (context, _, child) {
-                    final isSaved = ProductStorageService.isSaved(product);
+                child: StreamBuilder<List<ProductModel>>(
+                  stream: FirebaseProductService().getSavedProducts(),
+                  builder: (context, snapshot) {
+                    final savedProducts = snapshot.data ?? [];
+                    final isSaved = savedProducts.any(
+                      (item) => item.barcode == product.barcode,
+                    );
 
                     return FilledButton.icon(
                       onPressed: isSaved
                           ? null
-                          : () {
-                              ProductStorageService.saveProduct(product);
+                          : () async {
+                              try {
+                                await FirebaseProductService()
+                                    .saveFavoriteProduct(product);
 
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Product saved.'),
-                                ),
-                              );
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Product saved.'),
+                                  ),
+                                );
+                              } catch (error) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Could not save product.'),
+                                  ),
+                                );
+                              }
                             },
                       icon: Icon(
                         isSaved ? Icons.bookmark : Icons.bookmark_border,
@@ -271,6 +291,14 @@ class ProductResultScreen extends StatelessWidget {
     final upperScore = score.toUpperCase();
     if (['A', 'B', 'C', 'D', 'E'].contains(upperScore)) return upperScore;
     return '?';
+  }
+
+  String _formatNutritionValue(double value) {
+    if (value == value.roundToDouble()) {
+      return value.round().toString();
+    }
+
+    return value.toStringAsFixed(1);
   }
 }
 

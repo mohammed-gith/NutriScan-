@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models/product_model.dart';
+import '../services/firebase_product_service.dart';
 import '../services/open_food_facts_service.dart';
-import '../services/product_storage_service.dart';
 import 'product_result_screen.dart';
 
 class HealthierAlternativesScreen extends StatefulWidget {
@@ -243,8 +243,8 @@ class _AlternativeCard extends StatelessWidget {
           ),
           _CompareRow(
             label: 'Fat',
-            originalValue: original.fat,
-            alternativeValue: alternative.fat,
+            originalValue: _formatNutritionValue(original.fat),
+            alternativeValue: _formatNutritionValue(alternative.fat),
             unit: 'g',
           ),
           const SizedBox(height: 10),
@@ -272,11 +272,23 @@ class _AlternativeCard extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () {
-                    ProductStorageService.saveProduct(alternative);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Alternative saved.')),
-                    );
+                  onPressed: () async {
+                    try {
+                      await FirebaseProductService()
+                          .saveFavoriteProduct(alternative);
+
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Alternative saved.')),
+                      );
+                    } catch (error) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Could not save alternative.'),
+                        ),
+                      );
+                    }
                   },
                   icon: const Icon(Icons.bookmark_border),
                   label: const Text('Save'),
@@ -285,15 +297,27 @@ class _AlternativeCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: () {
-                    ProductStorageService.addToHistory(alternative);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            ProductResultScreen(product: alternative),
-                      ),
-                    );
+                  onPressed: () async {
+                    try {
+                      await FirebaseProductService()
+                          .saveScannedProduct(alternative);
+
+                      if (!context.mounted) return;
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              ProductResultScreen(product: alternative),
+                        ),
+                      );
+                    } catch (error) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Could not open alternative.'),
+                        ),
+                      );
+                    }
                   },
                   child: const Text('View'),
                 ),
@@ -321,6 +345,14 @@ class _AlternativeCard extends StatelessWidget {
     }
 
     return 'A potentially better option from Open Food Facts.';
+  }
+
+  String _formatNutritionValue(double value) {
+    if (value == value.roundToDouble()) {
+      return value.round().toString();
+    }
+
+    return value.toStringAsFixed(1);
   }
 }
 
