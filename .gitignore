@@ -5,6 +5,8 @@
 .gradle/
 build/
 coverage/
+flutter/
+flutter_*.log
 
 android/.gradle/
 ios/Pods/
