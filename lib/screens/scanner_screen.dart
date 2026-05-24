@@ -14,9 +14,7 @@ class ScannerScreen extends StatefulWidget {
 }
 
 class _ScannerScreenState extends State<ScannerScreen> {
-  final TextEditingController _barcodeController = TextEditingController(
-    text: '737628064502',
-  );
+  final TextEditingController _barcodeController = TextEditingController();
   final OpenFoodFactsService _service = OpenFoodFactsService();
   final FirebaseProductService _firebaseService = FirebaseProductService();
   final MobileScannerController _scannerController = MobileScannerController();
@@ -49,12 +47,22 @@ class _ScannerScreenState extends State<ScannerScreen> {
     _searchProduct();
   }
 
+  static final _barcodeRegExp = RegExp(r'^\d{8,14}$');
+
   Future<void> _searchProduct() async {
     final barcode = _barcodeController.text.trim();
 
     if (barcode.isEmpty) {
       setState(() {
         _errorMessage = 'Please enter a barcode.';
+        _hasScannedBarcode = false;
+      });
+      return;
+    }
+
+    if (!_barcodeRegExp.hasMatch(barcode)) {
+      setState(() {
+        _errorMessage = 'Enter a valid barcode (8–14 digits).';
         _hasScannedBarcode = false;
       });
       return;

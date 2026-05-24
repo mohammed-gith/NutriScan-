@@ -88,18 +88,25 @@ class ProductModel {
 
   Map<String, dynamic> toFirestoreMap() {
     return {
-      'barcode': barcode,
-      'name': name,
-      'brand': brand,
-      'imageUrl': imageUrl,
-      'ingredients': ingredients,
-      'allergens': allergens,
-      'nutriScore': nutriScore,
+      'barcode': _cap(barcode, 20),
+      'name': _cap(name, 500),
+      'brand': _cap(brand, 200),
+      'imageUrl': _cap(imageUrl, 1000),
+      'ingredients': _cap(ingredients, 5000),
+      'allergens': allergens
+          .take(50)
+          .map((a) => _cap(a, 100))
+          .toList(),
+      'nutriScore': _cap(nutriScore, 2),
       'calories': calories,
       'sugar': sugar,
       'fat': fat,
       'salt': salt,
     };
+  }
+
+  static String _cap(String value, int maxLength) {
+    return value.length > maxLength ? value.substring(0, maxLength) : value;
   }
 
   factory ProductModel.fromFirestoreMap(Map<String, dynamic> map) {

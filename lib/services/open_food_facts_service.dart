@@ -5,13 +5,15 @@ import 'package:http/http.dart' as http;
 import '../models/product_model.dart';
 
 class OpenFoodFactsService {
+  static const _timeout = Duration(seconds: 10);
+
   Future<ProductModel?> getProductByBarcode(String barcode) async {
     try {
       final url = Uri.parse(
         'https://world.openfoodfacts.org/api/v2/product/$barcode.json',
       );
 
-      final response = await http.get(url);
+      final response = await http.get(url).timeout(_timeout);
       if (response.statusCode != 200) return null;
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -27,10 +29,6 @@ class OpenFoodFactsService {
     }
   }
 
-  Future<ProductModel?> fetchProductByBarcode(String barcode) {
-    return getProductByBarcode(barcode);
-  }
-
   Future<List<ProductModel>> fetchHealthierAlternatives(
     ProductModel product,
   ) async {
@@ -41,17 +39,21 @@ class OpenFoodFactsService {
           .take(3)
           .join(' ');
 
+      final terms = searchTerms.isEmpty ? product.brand : searchTerms;
+      final cappedTerms =
+          terms.length > 100 ? terms.substring(0, 100) : terms;
+
       final url = Uri.https('world.openfoodfacts.org', '/cgi/search.pl', {
         'search_simple': '1',
         'action': 'process',
         'json': '1',
         'page_size': '30',
-        'search_terms': searchTerms.isEmpty ? product.brand : searchTerms,
+        'search_terms': cappedTerms,
         'fields':
             'code,product_name,brands,image_url,ingredients_text,allergens_tags,nutriments,nutriscore_grade',
       });
 
-      final response = await http.get(url);
+      final response = await http.get(url).timeout(_timeout);
       if (response.statusCode != 200) return [];
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;

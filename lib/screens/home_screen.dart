@@ -1,7 +1,13 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/product_model.dart';
+import '../services/auth_service.dart';
 import '../services/firebase_product_service.dart';
+import '../services/storage_service.dart';
+import '../widgets/nutriscan_logo.dart';
+import 'diet_damage_screen.dart';
 import 'product_result_screen.dart';
 import 'scanner_screen.dart';
 
@@ -24,10 +30,22 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openDietDamageTracker() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const DietDamageScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
-      _DashboardTab(onScanPressed: _openScanner),
+      _DashboardTab(
+        onScanPressed: _openScanner,
+        onDamagePressed: _openDietDamageTracker,
+      ),
       _ProductListTab(
         title: 'Scan History',
         emptyIcon: Icons.history,
@@ -81,8 +99,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class _DashboardTab extends StatelessWidget {
   final VoidCallback onScanPressed;
+  final VoidCallback onDamagePressed;
 
-  const _DashboardTab({required this.onScanPressed});
+  const _DashboardTab({
+    required this.onScanPressed,
+    required this.onDamagePressed,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -91,11 +113,12 @@ class _DashboardTab extends StatelessWidget {
       children: [
         Row(
           children: [
-            const CircleAvatar(
-              backgroundColor: Color(0xFFDDF8E8),
-              child: Icon(Icons.eco, color: Color(0xFF16A05D)),
+            const NutriScanLogo(
+              iconSize: 34,
+              textSize: 20,
+              alignment: MainAxisAlignment.start,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 16),
             const Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -156,10 +179,11 @@ class _DashboardTab extends StatelessWidget {
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        const _ActionTile(
-          icon: Icons.warning_amber,
-          title: 'Allergen alerts',
-          subtitle: 'Coming later when profile settings are added.',
+        _ActionTile(
+          icon: Icons.track_changes,
+          title: 'Diet Damage Tracker',
+          subtitle: 'Log cheat meals and recover damage points.',
+          onTap: onDamagePressed,
         ),
         const _ActionTile(
           icon: Icons.favorite,
@@ -172,68 +196,153 @@ class _DashboardTab extends StatelessWidget {
 }
 
 class _DailyCaloriesCard extends StatelessWidget {
-  static const int dailyTarget = 2000;
+  static const int _defaultTarget = 2000;
 
   const _DailyCaloriesCard();
 
+  Future<void> _editGoal(BuildContext context, int currentGoal) async {
+    final controller =
+        TextEditingController(text: currentGoal.toString());
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Set Daily Calorie Goal'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Calories (kcal)',
+            hintText: '2000',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final value = int.tryParse(controller.text.trim());
+              if (value == null || value < 500 || value > 10000) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(
+                      content: Text('Enter a value between 500 and 10,000.')),
+                );
+                return;
+              }
+              final uid = AuthService().currentUser?.uid;
+              if (uid != null) {
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(uid)
+                    .set({'dailyCalorieGoal': value},
+                        SetOptions(merge: true));
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return _ProductStreamBuilder(
-      stream: FirebaseProductService().getScanHistory(),
-      builder: (context, products) {
-        final totalCalories = products.fold<int>(
-          0,
-          (total, product) => total + product.caloriesNumber,
-        );
-        final progress = (totalCalories / dailyTarget).clamp(0, 1).toDouble();
+    final uid = AuthService().currentUser?.uid;
 
-        return Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: uid == null
+          ? null
+          : FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .snapshots(),
+      builder: (context, userSnap) {
+        final dailyTarget =
+            (userSnap.data?.data()?['dailyCalorieGoal'] as int?) ??
+                _defaultTarget;
+
+        return _ProductStreamBuilder(
+          stream: FirebaseProductService().getScanHistory(),
+          builder: (context, products) {
+            final totalCalories = products.fold<int>(
+              0,
+              (total, product) => total + product.caloriesNumber,
+            );
+            final progress =
+                (totalCalories / dailyTarget).clamp(0, 1).toDouble();
+            final overGoal = totalCalories > dailyTarget;
+
+            return Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const CircleAvatar(
-                    backgroundColor: Color(0xFFFFF2CC),
-                    child: Icon(Icons.local_fire_department,
-                        color: Color(0xFFE59D00)),
+                  Row(
+                    children: [
+                      const CircleAvatar(
+                        backgroundColor: Color(0xFFFFF2CC),
+                        child: Icon(Icons.local_fire_department,
+                            color: Color(0xFFE59D00)),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Daily Calories',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      Text(
+                        '$totalCalories / $dailyTarget kcal',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: overGoal
+                              ? const Color(0xFFD32F2F)
+                              : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: () => _editGoal(context, dailyTarget),
+                        child: const Icon(Icons.edit_outlined,
+                            size: 18, color: Color(0xFF16A05D)),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Daily Calories',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  const SizedBox(height: 14),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 12,
+                      backgroundColor: const Color(0xFFE9F3ED),
+                      color: overGoal
+                          ? const Color(0xFFD32F2F)
+                          : const Color(0xFFE5B400),
                     ),
                   ),
+                  const SizedBox(height: 10),
                   Text(
-                    '$totalCalories / $dailyTarget kcal',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    overGoal
+                        ? 'You exceeded your daily goal by ${totalCalories - dailyTarget} kcal.'
+                        : 'Based on scanned products today.',
+                    style: TextStyle(
+                      color:
+                          overGoal ? const Color(0xFFD32F2F) : Colors.black54,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 12,
-                  backgroundColor: const Color(0xFFE9F3ED),
-                  color: const Color(0xFFE5B400),
-                ),
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'Based on scanned products in this session.',
-                style: TextStyle(color: Colors.black54),
-              ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -326,46 +435,52 @@ class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final VoidCallback? onTap;
 
   const _ActionTile({
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: const Color(0xFFFFF2CC),
-            child: Icon(icon, color: const Color(0xFFE59D00)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(color: Colors.black54),
-                ),
-              ],
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: const Color(0xFFFFF2CC),
+              child: Icon(icon, color: const Color(0xFFE59D00)),
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.black54),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -534,15 +649,116 @@ class _ProfileTab extends StatefulWidget {
 }
 
 class _ProfileTabState extends State<_ProfileTab> {
+  final AuthService _authService = AuthService();
   String _name = 'NutriScan User';
-  String _email = 'student@example.com';
+  String _email = '';
   String _allergens = 'None set';
   String _goal = 'Eat healthier';
   String _diet = 'General';
+  String? _photoUrl;
+  bool _isUploadingPhoto = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    if (mounted) {
+      setState(() {
+        _email = user.email ?? '';
+      });
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (!mounted) return;
+      final data = doc.data();
+      if (data == null) return;
+
+      setState(() {
+        final name = (data['displayName'] as String? ?? '').trim();
+        if (name.isNotEmpty) _name = name;
+        final allergens = (data['allergens'] as String? ?? '').trim();
+        if (allergens.isNotEmpty) _allergens = allergens;
+        final goal = (data['goal'] as String? ?? '').trim();
+        if (goal.isNotEmpty) _goal = goal;
+        final diet = (data['diet'] as String? ?? '').trim();
+        if (diet.isNotEmpty) _diet = diet;
+        final photoUrl = (data['photoUrl'] as String? ?? '').trim();
+        if (photoUrl.isNotEmpty) _photoUrl = photoUrl;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _uploadPhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from Gallery'),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Take a Photo'),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 85,
+    );
+
+    if (picked == null || !mounted) return;
+
+    setState(() => _isUploadingPhoto = true);
+
+    try {
+      final url = await StorageService().uploadProfilePhoto(picked);
+      if (url != null) {
+        final uid = _authService.currentUser?.uid;
+        if (uid != null) {
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .set({'photoUrl': url}, SetOptions(merge: true));
+        }
+        if (mounted) setState(() => _photoUrl = url);
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not upload photo.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
+    }
+  }
 
   Future<void> _editProfile() async {
     final nameController = TextEditingController(text: _name);
-    final emailController = TextEditingController(text: _email);
     final allergensController = TextEditingController(text: _allergens);
     final goalController = TextEditingController(text: _goal);
     final dietController = TextEditingController(text: _diet);
@@ -559,11 +775,6 @@ class _ProfileTabState extends State<_ProfileTab> {
                 TextField(
                   controller: nameController,
                   decoration: const InputDecoration(labelText: 'Name'),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: emailController,
-                  decoration: const InputDecoration(labelText: 'Email'),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -589,16 +800,36 @@ class _ProfileTabState extends State<_ProfileTab> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () {
-                setState(() {
-                  _name = nameController.text.trim();
-                  _email = emailController.text.trim();
-                  _allergens = allergensController.text.trim();
-                  _goal = goalController.text.trim();
-                  _diet = dietController.text.trim();
-                });
+              onPressed: () async {
+                final newName = nameController.text.trim();
+                final newAllergens = allergensController.text.trim();
+                final newGoal = goalController.text.trim();
+                final newDiet = dietController.text.trim();
 
-                Navigator.pop(context);
+                final user = _authService.currentUser;
+                if (user != null) {
+                  try {
+                    await FirebaseFirestore.instance
+                        .collection('users')
+                        .doc(user.uid)
+                        .set({
+                      'displayName': newName,
+                      'allergens': newAllergens,
+                      'goal': newGoal,
+                      'diet': newDiet,
+                    }, SetOptions(merge: true));
+                  } catch (_) {}
+                }
+
+                if (context.mounted) {
+                  setState(() {
+                    _name = newName.isEmpty ? 'NutriScan User' : newName;
+                    _allergens = newAllergens;
+                    _goal = newGoal;
+                    _diet = newDiet;
+                  });
+                  Navigator.pop(context);
+                }
               },
               child: const Text('Save'),
             ),
@@ -608,18 +839,13 @@ class _ProfileTabState extends State<_ProfileTab> {
     );
 
     nameController.dispose();
-    emailController.dispose();
     allergensController.dispose();
     goalController.dispose();
     dietController.dispose();
   }
 
-  void _showPhotoMessage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Photo upload will be added with image_picker later.'),
-      ),
-    );
+  Future<void> _logout() async {
+    await _authService.signOut();
   }
 
   @override
@@ -633,10 +859,12 @@ class _ProfileTabState extends State<_ProfileTab> {
         ),
         const SizedBox(height: 20),
         _ProfileHeader(
-          name: _name,
+          name: _name.isEmpty ? 'NutriScan User' : _name,
           email: _email,
+          photoUrl: _photoUrl,
+          isUploadingPhoto: _isUploadingPhoto,
           onEdit: _editProfile,
-          onChangePhoto: _showPhotoMessage,
+          onChangePhoto: _uploadPhoto,
         ),
         const SizedBox(height: 16),
         _ProfileSection(
@@ -652,20 +880,28 @@ class _ProfileTabState extends State<_ProfileTab> {
           ],
         ),
         const SizedBox(height: 16),
-        const _ProfileSection(
+        _ProfileSection(
           title: 'Account Status',
           rows: [
-            _ProfileRow(
-              icon: Icons.cloud_off,
+            const _ProfileRow(
+              icon: Icons.cloud_done,
               label: 'Storage',
-              value: 'Local only until Firebase is added',
+              value: 'Firebase Cloud',
             ),
             _ProfileRow(
               icon: Icons.image,
               label: 'Profile Picture',
-              value: 'Image upload will be added with image_picker',
+              value: (_photoUrl != null && _photoUrl!.isNotEmpty)
+                  ? 'Uploaded'
+                  : 'Tap photo to upload',
             ),
           ],
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: _logout,
+          icon: const Icon(Icons.logout),
+          label: const Text('Logout'),
         ),
       ],
     );
@@ -675,6 +911,8 @@ class _ProfileTabState extends State<_ProfileTab> {
 class _ProfileHeader extends StatelessWidget {
   final String name;
   final String email;
+  final String? photoUrl;
+  final bool isUploadingPhoto;
   final VoidCallback onEdit;
   final VoidCallback onChangePhoto;
 
@@ -683,6 +921,8 @@ class _ProfileHeader extends StatelessWidget {
     required this.email,
     required this.onEdit,
     required this.onChangePhoto,
+    this.photoUrl,
+    this.isUploadingPhoto = false,
   });
 
   @override
@@ -696,11 +936,46 @@ class _ProfileHeader extends StatelessWidget {
       child: Row(
         children: [
           GestureDetector(
-            onTap: onChangePhoto,
-            child: const CircleAvatar(
-              radius: 36,
-              backgroundColor: Color(0xFFDDF8E8),
-              child: Icon(Icons.person, size: 42, color: Color(0xFF16A05D)),
+            onTap: isUploadingPhoto ? null : onChangePhoto,
+            child: Stack(
+              children: [
+                CircleAvatar(
+                  radius: 36,
+                  backgroundColor: const Color(0xFFDDF8E8),
+                  backgroundImage: (photoUrl != null && photoUrl!.isNotEmpty)
+                      ? NetworkImage(photoUrl!)
+                      : null,
+                  child: (photoUrl == null || photoUrl!.isEmpty)
+                      ? const Icon(Icons.person,
+                          size: 42, color: Color(0xFF16A05D))
+                      : null,
+                ),
+                if (isUploadingPhoto)
+                  const Positioned.fill(
+                    child: CircleAvatar(
+                      backgroundColor: Colors.black45,
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  const Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: CircleAvatar(
+                      radius: 12,
+                      backgroundColor: Color(0xFF16A05D),
+                      child: Icon(Icons.camera_alt,
+                          size: 14, color: Colors.white),
+                    ),
+                  ),
+              ],
             ),
           ),
           const SizedBox(width: 16),
@@ -718,7 +993,7 @@ class _ProfileHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  email.isEmpty ? 'student@example.com' : email,
+                  email,
                   style: const TextStyle(color: Color(0xFFCBEFDB)),
                 ),
               ],

@@ -1,0 +1,29 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "nutriscan-38a97",
+          "appId": "1:588407772197:android:f5ef9ad4111e0f64279bcc",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "nutriscan-38a97",
+          "configurations": {
+            "android": "1:588407772197:android:f5ef9ad4111e0f64279bcc",
+            "ios": "1:588407772197:ios:699a4db6d7642fec279bcc",
+            "web": "1:588407772197:web:cbce4a1990423503279bcc"
+          }
+        }
+      }
+    }
+  }
+}

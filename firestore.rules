@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /scan_history/{docId} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.barcode is string
+          && request.resource.data.barcode.size() > 0
+          && request.resource.data.barcode.size() <= 20
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 500;
+      }
+
+      match /saved_products/{barcode} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.barcode is string
+          && request.resource.data.barcode.size() > 0
+          && request.resource.data.barcode.size() <= 20
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 500;
+      }
+
+      match /diet_damage_logs/{docId} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.calories is int
+          && request.resource.data.calories > 0
+          && request.resource.data.calories <= 100000
+          && request.resource.data.damagePoints is int
+          && request.resource.data.reason is string
+          && request.resource.data.reason.size() <= 500;
+        allow update: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['recovered'])
+          && request.resource.data.recovered is bool;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
